@@ -1,4 +1,4 @@
-const TMDB_KEY = TMDB_KEY; 
+const TMDB_KEY = globalThis.TMDB_KEY; 
 
 const TTL = 1000 * 60 * 5; // 5 min
 const cache = new Map();
@@ -80,3 +80,4 @@ export default {
     }
   },
 };
+
