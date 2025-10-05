@@ -1,27 +1,7 @@
-import express from "express";
-import fetch from "node-fetch";
-import rateLimit from "express-rate-limit";
-import dotenv from "dotenv";
+const TMDB_KEY = TMDB_KEY; 
 
-dotenv.config();
-
-const TMDB_KEY = process.env.TMDB_KEY;
-if (!TMDB_KEY) {
-  console.error("Falta TMDB_KEY");
-  process.exit(1);
-}
-
-const app = express();
-app.use(express.json());
-
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-});
-app.use(limiter);
-
-const cache = new Map();
 const TTL = 1000 * 60 * 5; // 5 min
+const cache = new Map();
 
 function getCached(key) {
   const entry = cache.get(key);
@@ -32,66 +12,71 @@ function getCached(key) {
   }
   return entry.data;
 }
+
 function setCached(key, data) {
   cache.set(key, { ts: Date.now(), data });
 }
 
-async function proxyToTmdb(cacheKey, url, res) {
-  try {
-    const cached = getCached(cacheKey);
-    if (cached) return res.json({ fromCache: true, ...cached });
+// Función para fetch a TMDb con cache
+async function fetchFromTmdb(url, cacheKey) {
+  const cached = getCached(cacheKey);
+  if (cached) return { fromCache: true, data: cached };
 
-    const tmdbRes = await fetch(url);
-    if (!tmdbRes.ok) {
-      return res.status(tmdbRes.status).json({
-        error: "Error al consultar",
-        status: tmdbRes.status,
-      });
-    }
-
-    const data = await tmdbRes.json();
-    setCached(cacheKey, data);
-    res.json({ fromCache: false, ...data });
-  } catch (err) {
-    console.error("proxyToTmdb:", err);
-    res.status(500).json({ error: err.message });
-  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`TMDb error: ${res.status}`);
+  const data = await res.json();
+  setCached(cacheKey, data);
+  return { fromCache: false, data };
 }
 
-app.get("/3/find/:imdbId", async (req, res) => {
-  const { imdbId } = req.params;
-  if (!/^tt\d{7,8}$/.test(imdbId)) {
-    return res.status(400).json({ error: "imdbId inválido" });
-  }
+export default {
+  async fetch(request) {
+    try {
+      const url = new URL(request.url);
+      const imdbId = url.searchParams.get("imdbId");
+      const tvId = url.searchParams.get("tvId");
+      const season = url.searchParams.get("season");
+      const episode = url.searchParams.get("episode");
 
-  const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id&language=es-ES`;
-  proxyToTmdb(imdbId, url, res);
-});
+      let cacheKey, tmdbUrl;
 
-app.get("/3/tv/:tvId/season/:season/episode/:episode", async (req, res) => {
-  const { tvId, season, episode } = req.params;
-  const cacheKey = `${tvId}-s${season}e${episode}`;
-  const url = `https://api.themoviedb.org/3/tv/${tvId}/season/${season}/episode/${episode}?api_key=${TMDB_KEY}&language=es-ES`;
-  proxyToTmdb(cacheKey, url, res);
-});
+      if (imdbId) {
+        if (!/^tt\d{7,8}$/.test(imdbId)) {
+          return new Response(JSON.stringify({ error: "imdbId inválido" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        cacheKey = `imdb-${imdbId}`;
+        tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id&language=es-ES`;
+      }
+      else if (tvId && season && episode) {
+        if (!/^\d+$/.test(tvId) || !/^\d+$/.test(season) || !/^\d+$/.test(episode)) {
+          return new Response(JSON.stringify({ error: "Parámetros inválidos" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        cacheKey = `tv-${tvId}-s${season}e${episode}`;
+        tmdbUrl = `https://api.themoviedb.org/3/tv/${tvId}/season/${season}/episode/${episode}?api_key=${TMDB_KEY}&language=es-ES`;
+      } else {
+        return new Response(JSON.stringify({ error: "Parámetros faltantes" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-app.get("/find/:imdbId", async (req, res) => {
-  const { imdbId } = req.params;
-  if (!/^tt\d{7,8}$/.test(imdbId)) {
-    return res.status(400).json({ error: "imdbId inválido" });
-  }
+      const result = await fetchFromTmdb(tmdbUrl, cacheKey);
 
-  const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id&language=es-ES`;
-  proxyToTmdb(imdbId, url, res);
-});
-
-app.get("/tv/:tvId/season/:season/episode/:episode", async (req, res) => {
-  const { tvId, season, episode } = req.params;
-  const cacheKey = `${tvId}-s${season}e${episode}`;
-  const url = `https://api.themoviedb.org/3/tv/${tvId}/season/${season}/episode/${episode}?api_key=${TMDB_KEY}&language=es-ES`;
-  proxyToTmdb(cacheKey, url, res);
-});
-
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`puerto ${PORT}`));
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  },
+};
