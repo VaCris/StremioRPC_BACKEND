@@ -1,5 +1,3 @@
-const TMDB_KEY = TMDB_KEY; 
-
 const TTL = 1000 * 60 * 5; // 5 min
 const cache = new Map();
 
@@ -17,7 +15,6 @@ function setCached(key, data) {
   cache.set(key, { ts: Date.now(), data });
 }
 
-// Función para fetch a TMDb con cache
 async function fetchFromTmdb(url, cacheKey) {
   const cached = getCached(cacheKey);
   if (cached) return { fromCache: true, data: cached };
@@ -48,7 +45,7 @@ export default {
           });
         }
         cacheKey = `imdb-${imdbId}`;
-        tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id&language=es-ES`;
+        tmdbUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${globalThis.TMDB_KEY}&external_source=imdb_id&language=es-ES`;
       }
       else if (tvId && season && episode) {
         if (!/^\d+$/.test(tvId) || !/^\d+$/.test(season) || !/^\d+$/.test(episode)) {
@@ -58,7 +55,7 @@ export default {
           });
         }
         cacheKey = `tv-${tvId}-s${season}e${episode}`;
-        tmdbUrl = `https://api.themoviedb.org/3/tv/${tvId}/season/${season}/episode/${episode}?api_key=${TMDB_KEY}&language=es-ES`;
+        tmdbUrl = `https://api.themoviedb.org/3/tv/${tvId}/season/${season}/episode/${episode}?api_key=${globalThis.TMDB_KEY}&language=es-ES`;
       } else {
         return new Response(JSON.stringify({ error: "Parámetros faltantes" }), {
           status: 400,
@@ -80,3 +77,6 @@ export default {
     }
   },
 };
+
+
+
